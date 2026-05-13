@@ -23,12 +23,4 @@ public class PaymentInitiateRequestDTO {
     /** Customer's 10-digit mobile number. Required by Cashfree. */
     private String customerPhone;
 
-    public ServiceType getServiceType() { return serviceType; }
-    public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
-
-    public Long getReferenceId() { return referenceId; }
-    public void setReferenceId(Long referenceId) { this.referenceId = referenceId; }
-
-    public String getCustomerPhone() { return customerPhone; }
-    public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
 }

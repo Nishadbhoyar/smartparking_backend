@@ -30,15 +30,4 @@ public class RefundRequestDTO {
     /** Reason stored in Cashfree and your DB for audit trail. */
     private String refundReason;
 
-    public ServiceType getServiceType() { return serviceType; }
-    public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
-
-    public Long getReferenceId() { return referenceId; }
-    public void setReferenceId(Long referenceId) { this.referenceId = referenceId; }
-
-    public Double getRefundAmount() { return refundAmount; }
-    public void setRefundAmount(Double refundAmount) { this.refundAmount = refundAmount; }
-
-    public String getRefundReason() { return refundReason; }
-    public void setRefundReason(String refundReason) { this.refundReason = refundReason; }
 }
