@@ -2,6 +2,8 @@ package com.smartparking.exceptions;
 
 import com.smartparking.dtos.response.ErrorResponseDTO;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -13,115 +15,64 @@ import java.time.LocalDateTime;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     // 1. Handles 404 Not Found
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponseDTO> handleResourceNotFoundException(
             ResourceNotFoundException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.NOT_FOUND.value(),
-                "Not Found",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+        return build(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
     }
 
-    // 2. Handles 403 Forbidden (Security Violations)
+    // 2. Handles 403 Forbidden — specific handler takes precedence over DomainException
     @ExceptionHandler(UnauthorizedAccessException.class)
     public ResponseEntity<ErrorResponseDTO> handleUnauthorizedAccessException(
             UnauthorizedAccessException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.FORBIDDEN.value(),
-                "Forbidden",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
+        return build(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage(), request);
     }
 
-    // 3. Handles 409 Conflict (Duplicate Emails, etc.)
+    // 3. Handles 409 Conflict
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponseDTO> handleDuplicateResourceException(
             DuplicateResourceException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.CONFLICT.value(),
-                "Conflict",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+        return build(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
     }
 
-    // 3b. Handles 400 Bad Request — invalid enum values (e.g. bad slotType), promo rules
-    // M-06 FIX: SlotType.valueOf() throws IllegalArgumentException for unknown slot types.
-    // Without this handler it falls through to the 500 fallback — confusing for callers.
+    // 4. Handles 400 Bad Request — invalid enum values, promo rules
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgumentException(
             IllegalArgumentException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request);
     }
 
     // 5. Handles 401 Unauthorized — wrong email or password at login
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponseDTO> handleBadCredentialsException(
             BadCredentialsException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.UNAUTHORIZED.value(),
-                "Unauthorized",
-                "Invalid email or password.",
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
+        return build(HttpStatus.UNAUTHORIZED, "Unauthorized", "Invalid email or password.", request);
     }
 
-    // 5b. Handles 400 Bad Request — business logic errors from service layer
-    // RuntimeException is thrown for: wrong OTP, wrong status transitions, booking conflicts, etc.
-    // Without this, all RuntimeExceptions fall through to the 500 fallback — misleading for callers.
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ErrorResponseDTO> handleRuntimeException(
-            RuntimeException ex, HttpServletRequest request) {
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    // 6. Handles 400 Bad Request — business logic errors (DomainException and subclasses)
+    @ExceptionHandler(DomainException.class)
+    public ResponseEntity<ErrorResponseDTO> handleDomainException(
+            DomainException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), request);
     }
 
-    // 6. Fallback for any generic unexpected errors (500 Internal Server Error)
+    // 7. Fallback — any unhandled exception → 500
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDTO> handleGlobalException(
             Exception ex, HttpServletRequest request) {
+        log.error("Unhandled exception on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error",
+                "An unexpected error occurred.", request);
+    }
 
-        // 👉 ADD THIS LINE: This forces Spring to print the exact crash in your IntelliJ console!
-        ex.printStackTrace();
-
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO(
-                LocalDateTime.now(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Internal Server Error",
-                "An unexpected error occurred.",
-                request.getRequestURI()
-        );
-        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+    // ── Helper ───────────────────────────────────────────────────────────────
+    private ResponseEntity<ErrorResponseDTO> build(
+            HttpStatus status, String error, String message, HttpServletRequest request) {
+        ErrorResponseDTO body = new ErrorResponseDTO(
+                LocalDateTime.now(), status.value(), error, message, request.getRequestURI());
+        return new ResponseEntity<>(body, status);
     }
 }

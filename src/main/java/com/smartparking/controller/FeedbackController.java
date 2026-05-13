@@ -12,7 +12,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/feedback")
-
 public class FeedbackController {
 
     @Autowired
@@ -31,7 +30,7 @@ public class FeedbackController {
         return new ResponseEntity<>(feedbackService.getLotFeedback(lotId), HttpStatus.OK);
     }
 
-    // GET: The average star rating for a parking lot (e.g., returns 4.5)
+    // GET: The average star rating for a parking lot
     @GetMapping("/lot/{lotId}/average")
     public ResponseEntity<Double> getLotAverageRating(@PathVariable Long lotId) {
         return new ResponseEntity<>(feedbackService.getLotAverageRating(lotId), HttpStatus.OK);
@@ -47,5 +46,12 @@ public class FeedbackController {
     @GetMapping("/valet/{valetId}/average")
     public ResponseEntity<Double> getValetAverageRating(@PathVariable Long valetId) {
         return new ResponseEntity<>(feedbackService.getValetAverageRating(valetId), HttpStatus.OK);
+    }
+
+    // DELETE: Delete a review
+    @DeleteMapping("/{feedbackId}")
+    public ResponseEntity<String> deleteFeedback(@PathVariable Long feedbackId) {
+        feedbackService.deleteFeedback(feedbackId);
+        return ResponseEntity.ok("Review deleted successfully");
     }
 }

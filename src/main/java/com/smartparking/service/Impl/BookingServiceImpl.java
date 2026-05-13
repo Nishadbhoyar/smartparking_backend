@@ -11,23 +11,31 @@ import com.smartparking.entities.parking.ParkingLot;
 import com.smartparking.entities.parking.Slot;
 import com.smartparking.entities.users.Customer;
 import com.smartparking.exceptions.ResourceNotFoundException;
+import com.smartparking.exceptions.UnauthorizedAccessException;
 import com.smartparking.repositories.BookingRepository;
 import com.smartparking.repositories.CustomerRepository;
 import com.smartparking.repositories.ParkingLotRepository;
 import com.smartparking.repositories.SlotRepository;
+import com.smartparking.repositories.PromoUsageRepository;
+import com.smartparking.repositories.PromoCodeRepository;
 import com.smartparking.OtherServices.NotificationService;
 import com.smartparking.service.BookingService;
 import com.smartparking.service.PromoService;
 import com.smartparking.dtos.request.ApplyPromoRequestDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -57,6 +65,14 @@ public class BookingServiceImpl implements BookingService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private PromoUsageRepository promoUsageRepository;
+
+    @Autowired
+    private PromoCodeRepository promoCodeRepository;
+
+
+
     @Value("${smartparking.valet.base-fee:50.0}")
     private double valetBaseFee;
 
@@ -71,27 +87,48 @@ public class BookingServiceImpl implements BookingService {
 
         // FIX #9: null/blank check before valueOf — prevents NPE
         if (requestDTO.getSlotType() == null || requestDTO.getSlotType().isBlank()) {
-            throw new IllegalArgumentException("slotType must not be null or empty.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "slotType must not be null or empty.");
         }
         SlotType requestedType = SlotType.valueOf(requestDTO.getSlotType().toUpperCase());
 
-        Slot availableSlot = slotRepository
-                .findFirstByParkingLotIdAndStatusAndSlotType(lot.getId(), SlotStatus.AVAILABLE, requestedType)
-                .orElseThrow(() -> new RuntimeException(
-                        "Sorry, this lot is completely full for " + requestedType + " slots!"));
+        // Resolve which slot to book.
+        Slot availableSlot;
+        if (requestDTO.getSlotId() != null) {
+            availableSlot = slotRepository.lockById(
+                    requestDTO.getSlotId(),
+                    lot.getId(),
+                    SlotStatus.AVAILABLE
+            ).orElseGet(() ->
+                    // Slot was taken between the time the user saw it and now — fall back
+                    slotRepository.lockFirstAvailable(
+                            lot.getId(),
+                            SlotStatus.AVAILABLE,
+                            requestedType
+                    ).orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Sorry, this lot is completely full for " + requestedType + " slots!"))
+            );
+        } else {
+            availableSlot = slotRepository.lockFirstAvailable(
+                    lot.getId(),
+                    SlotStatus.AVAILABLE,
+                    requestedType
+            ).orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Sorry, this lot is completely full for " + requestedType + " slots!"));
+        }
 
         Booking booking = new Booking();
         String bookingCode;
         do {
             bookingCode = "BK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         } while (bookingRepository.existsByBookingCode(bookingCode));
+
         // C-3 FIX: Never trust the price sent by the client.
-        // Recalculate from the slot's actual hourly rate and the requested duration.
         long requestedHours = Math.max(1L, Duration.between(
-                requestDTO.getEntryTime(), requestDTO.getExitTime()).toHours());
+                requestDTO.getEntryTime().toInstant(),
+                requestDTO.getExitTime().toInstant()).toHours());
         double serverCalculatedAmount = availableSlot.getHourlyRate() * requestedHours;
 
-        // C-4 FIX: Apply promo on the backend atomically — records usage and validates in one place.
+        // C-4 FIX: Apply promo on the backend atomically
         if (requestDTO.getPromoCode() != null && !requestDTO.getPromoCode().isBlank()) {
             ApplyPromoRequestDTO promoReq = new ApplyPromoRequestDTO();
             promoReq.setCode(requestDTO.getPromoCode().trim().toUpperCase());
@@ -99,14 +136,15 @@ public class BookingServiceImpl implements BookingService {
             promoReq.setCustomerId(requestDTO.getCustomerId());
             double discount = promoService.applyPromo(promoReq).getDiscountAmount();
             serverCalculatedAmount = Math.max(0, serverCalculatedAmount - discount);
+            booking.setPromoCode(requestDTO.getPromoCode().trim().toUpperCase());
         }
 
         booking.setBookingCode(bookingCode);
         booking.setCustomer(customer);
         booking.setParkingLot(lot);
         booking.setSlot(availableSlot);
-        booking.setEntryTime(requestDTO.getEntryTime());
-        booking.setExitTime(requestDTO.getExitTime());
+        booking.setEntryTime(LocalDateTime.ofInstant(requestDTO.getEntryTime().toInstant(), ZoneId.systemDefault()));
+        booking.setExitTime(LocalDateTime.ofInstant(requestDTO.getExitTime().toInstant(), ZoneId.systemDefault()));
         booking.setTotalAmount(serverCalculatedAmount);   // server value, not client value
         booking.setStatus(BookingStatus.PENDING);
 
@@ -120,12 +158,10 @@ public class BookingServiceImpl implements BookingService {
         slotWebSocketService.broadcastSlotUpdate(availableSlot);
 
         Booking savedBooking = bookingRepository.save(booking);
-        // Notify customer: booking confirmed with code and lot name
         notificationService.notifyBookingConfirmed(
                 customer.getId(),
                 savedBooking.getBookingCode(),
                 savedBooking.getParkingLot().getName());
-        // Also notify lot admin: new booking at their lot
         notificationService.notifyAdminNewBooking(
                 savedBooking.getParkingLot().getParkingLotAdmin().getId(),
                 savedBooking.getBookingCode(),
@@ -149,16 +185,21 @@ public class BookingServiceImpl implements BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Invalid Booking Code"));
 
         if (!booking.getParkingLot().getId().equals(parkingLotId)) {
-            throw new RuntimeException("Security Alert: This ticket is for a different parking lot!");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Security Alert: This ticket is for a different parking lot!");
         }
 
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new RuntimeException("This ticket has already been used or is invalid.");
+        if (booking.getStatus() == BookingStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment not yet confirmed. Please complete payment before entering.");
+        }
+
+        if (booking.getStatus() != BookingStatus.PAID) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "This ticket has already been used or is invalid. Current status: " + booking.getStatus());
         }
 
         booking.setStatus(BookingStatus.ACTIVE);
         Booking checkedIn = bookingRepository.save(booking);
-        // Notify customer: successfully checked in
+
         notificationService.notifyBookingCheckedIn(
                 checkedIn.getCustomer().getId(),
                 checkedIn.getParkingLot().getName());
@@ -172,7 +213,7 @@ public class BookingServiceImpl implements BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not Found!"));
 
         if (booking.getStatus() != BookingStatus.ACTIVE) {
-            throw new RuntimeException(
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Vehicle is not currently checked in! Status is: " + booking.getStatus());
         }
 
@@ -196,11 +237,9 @@ public class BookingServiceImpl implements BookingService {
         slotWebSocketService.broadcastSlotUpdate(slot);
 
         Booking completedBooking = bookingRepository.save(booking);
-        // Notify customer: checkout done with final amount
         notificationService.notifyBookingCompleted(
                 completedBooking.getCustomer().getId(),
                 completedBooking.getTotalAmount());
-        // Also notify lot admin: checkout revenue
         notificationService.notifyAdminCheckout(
                 completedBooking.getParkingLot().getParkingLotAdmin().getId(),
                 completedBooking.getBookingCode(),
@@ -251,30 +290,55 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponseDTO cancelBooking(Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            throw new RuntimeException("Cannot cancel a completed booking.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot cancel a completed booking.");
         }
-        if (booking.getStatus() == BookingStatus.CANCELLED) {
-            throw new RuntimeException("Booking already cancelled.");
+
+        String callerEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        if (!booking.getCustomer().getEmail().equals(callerEmail)) {
+            throw new UnauthorizedAccessException("You are not authorized to cancel this booking.");
         }
+
         // Free the slot if active
-        if (booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.PENDING) {
+        if (
+                booking.getStatus() == BookingStatus.ACTIVE
+                        || booking.getStatus() == BookingStatus.PENDING
+                        || booking.getStatus() == BookingStatus.PAID
+        ) {
             Slot slot = booking.getSlot();
             slot.setStatus(SlotStatus.AVAILABLE);
             slotRepository.save(slot);
             slotWebSocketService.broadcastSlotUpdate(slot);
         }
+
+        // Revert promo code usage
+        if (booking.getPromoCode() != null) {
+            promoUsageRepository.deleteByPromoCodeCodeAndCustomerId(
+                    booking.getPromoCode(),
+                    booking.getCustomer().getId()
+            );
+
+            promoCodeRepository.findByCode(booking.getPromoCode())
+                    .ifPresent(promo -> {
+                        promo.setUsedCount(Math.max(0, promo.getUsedCount() - 1));
+                        promoCodeRepository.save(promo);
+                    });
+        }
+
         booking.setStatus(BookingStatus.CANCELLED);
         Booking cancelled = bookingRepository.save(booking);
-        // Notify customer: booking has been cancelled
+
         notificationService.notifyBookingCancelled(
                 cancelled.getCustomer().getId(),
                 cancelled.getBookingCode());
-        // Also notify lot admin: a slot just freed up
+
         notificationService.notifyAdminBookingCancelled(
                 cancelled.getParkingLot().getParkingLotAdmin().getId(),
                 cancelled.getBookingCode(),
                 cancelled.getSlot().getSlotNumber());
+
         return mapToResponseDTO(cancelled);
     }
 

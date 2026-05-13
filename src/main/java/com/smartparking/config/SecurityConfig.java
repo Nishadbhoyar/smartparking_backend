@@ -83,6 +83,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/valet/fare-estimate").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/rental-cars/nearby").permitAll()
                         .requestMatchers("/ws/**").permitAll()
+                        // Cashfree webhook must be public — Cashfree calls it without a JWT
+                        .requestMatchers(HttpMethod.POST, "/api/payments/webhook").permitAll()
 
                         // ── Dashboard ────────────────────────────────────────────────────
                         .requestMatchers("/api/dashboard/customer/**").hasRole("CUSTOMER")
@@ -137,9 +139,20 @@ public class SecurityConfig {
                         .requestMatchers("/api/valet/earnings/{valetId}/payout").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/valet/earnings/**").hasRole("VALET")
                         .requestMatchers(HttpMethod.GET, "/api/valet/request/*").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/valet/images/*").hasRole("CUSTOMER")
                         // Customer can poll their own active valet job
                         .requestMatchers(HttpMethod.GET, "/api/valet/customer/*/active").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.GET, "/api/valet/customer/*").hasRole("CUSTOMER") // ADD THIS LINE
+                        .requestMatchers(HttpMethod.POST, "/api/valet/*/confirm-return").hasRole("CUSTOMER")
+
                         // ── Rental Cars ──────────────────────────────────────────────────
+                        // IMPORTANT: specific /bookings/* rules MUST come before the broad
+                        // /rental-cars/** wildcard, or the broad rule matches first and the
+                        // specific rules are never evaluated (Spring evaluates top-to-bottom).
+                        .requestMatchers(HttpMethod.POST, "/api/rental-cars/bookings/*/verify-pickup").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/rental-cars/bookings/*/verify-return").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.PUT,  "/api/rental-cars/bookings/*/extend").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "CUSTOMER", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.GET,  "/api/rental-cars/bookings/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/rental-cars/*/book").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.GET,  "/api/rental-cars/customer/**").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.POST, "/api/rental-cars/owner/**").hasRole("CAR_OWNER")
@@ -147,12 +160,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,  "/api/rental-cars/owner/**").hasAnyRole("CAR_OWNER", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET,  "/api/rental-cars/company/**").hasAnyRole("FLEET_ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.PUT,  "/api/rental-cars/**").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "SUPER_ADMIN")
-                        // Rental car booking actions — car owner and fleet admin verify OTPs
-                        // and extend bookings. These were missing, causing 401 on every action.
-                        .requestMatchers(HttpMethod.POST, "/api/rental-cars/bookings/*/verify-pickup").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "SUPER_ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/rental-cars/bookings/*/verify-return").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "SUPER_ADMIN")
-                        .requestMatchers(HttpMethod.PUT,  "/api/rental-cars/bookings/*/extend").hasAnyRole("CAR_OWNER", "FLEET_ADMIN", "CUSTOMER", "SUPER_ADMIN")
-                        .requestMatchers(HttpMethod.GET,  "/api/rental-cars/bookings/**").authenticated()
 
                         // ── Feedback ─────────────────────────────────────────────────────
                         .requestMatchers(HttpMethod.POST, "/api/feedback/submit").authenticated()
@@ -160,6 +167,12 @@ public class SecurityConfig {
 
                         // ── Notifications ────────────────────────────────────────────────
                         .requestMatchers("/api/notifications/**").authenticated()
+
+
+                        // ── Rental Company Registration ──────────────────────────────
+                        .requestMatchers(HttpMethod.POST, "/api/rental-company/register").hasRole("FLEET_ADMIN")
+                        .requestMatchers(HttpMethod.GET,  "/api/rental-company/my").hasRole("FLEET_ADMIN")
+                        .requestMatchers(HttpMethod.GET,  "/api/rental-company/by-admin/**").hasAnyRole("FLEET_ADMIN", "SUPER_ADMIN")
 
                         // ── User profile ─────────────────────────────────────────────────
                         .requestMatchers(HttpMethod.GET, "/api/users/**").authenticated()

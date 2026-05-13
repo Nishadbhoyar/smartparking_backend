@@ -4,38 +4,42 @@ import com.smartparking.OtherServices.FareCalculationService;
 import com.smartparking.OtherServices.NearestLotService;
 import com.smartparking.OtherServices.NearestValetService;
 import com.smartparking.dtos.response.FareResponseDTO;
-
 import com.smartparking.entities.valet.ValetFare;
+import com.smartparking.exceptions.ResourceNotFoundException;
+import com.smartparking.repositories.ValetRequestRepository;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 /**
- * FILE 8 of 8
  * Location: com/smartparking/controller/ValetLocationController.java
  *
- * Handles 4 things:
- *  1. Valet app sends GPS ping every 5 seconds → POST /api/valet/location
- *  2. Customer checks ETA before booking       → GET  /api/valet/eta
- *  3. Customer sees fare estimate              → GET  /api/valet/fare-estimate
- *  4. Customer sees final bill after job       → GET  /api/valet/fare/{requestId}
+ * Handles 5 things:
+ *  1. Valet app sends GPS ping every 5 seconds  → POST /api/valet/location
+ *  2. Customer checks ETA before booking        → GET  /api/valet/eta
+ *  3. Customer sees fare estimate               → GET  /api/valet/fare-estimate
+ *  4. Customer sees final bill after job        → GET  /api/valet/fare/{requestId}
+ *  5. Customer map polls valet's live location  → GET  /api/valet/{requestId}/valet-location  ← NEW
  */
 @RestController
 @RequestMapping("/api/valet")
-
 public class ValetLocationController {
 
-    private final NearestValetService nearestValetService;
-    private final NearestLotService nearestLotService;
+    private final NearestValetService    nearestValetService;
+    private final NearestLotService      nearestLotService;
     private final FareCalculationService fareCalculationService;
+    private final ValetRequestRepository valetRequestRepository; // NEW
 
     public ValetLocationController(NearestValetService nearestValetService,
                                    NearestLotService nearestLotService,
-                                   FareCalculationService fareCalculationService) {
+                                   FareCalculationService fareCalculationService,
+                                   ValetRequestRepository valetRequestRepository) { // NEW
         this.nearestValetService    = nearestValetService;
         this.nearestLotService      = nearestLotService;
         this.fareCalculationService = fareCalculationService;
+        this.valetRequestRepository = valetRequestRepository; // NEW
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -69,7 +73,7 @@ public class ValetLocationController {
             @RequestParam double lat,
             @RequestParam double lon) {
 
-        NearestValetService.ValetETA      valetETA  = nearestValetService.getNearestValetETA(lat, lon);
+        NearestValetService.ValetETA       valetETA  = nearestValetService.getNearestValetETA(lat, lon);
         NearestLotService.NearestLotResult lotResult = nearestLotService.findNearestAvailableLot(lat, lon);
 
         return ResponseEntity.ok(Map.of(
@@ -181,6 +185,45 @@ public class ValetLocationController {
         return ResponseEntity.ok(response);
     }
 
+    /// ─────────────────────────────────────────────────────────────────────
+    //  5. NEW — Customer map polls valet's live location during active job
+    // ─────────────────────────────────────────────────────────────────────
+    @Transactional(readOnly = true) // <-- ADD THIS LINE
+    @GetMapping("/{requestId}/valet-location")
+    public ResponseEntity<Map<String, Object>> getValetLiveLocation(
+            @PathVariable Long requestId) {
+
+        // 1. Load the booking — 404 if it doesn't exist
+        var request = valetRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Valet request not found: " + requestId));
+
+        // 2. A valet is only assigned once they accept the job.
+        var valet = request.getValet();
+        if (valet == null) {
+            return ResponseEntity.unprocessableEntity()
+                    .body(Map.of("message", "No valet assigned yet"));
+        }
+
+        // 3. Valet may have accepted but not sent a GPS ping yet.
+        // Because of @Transactional, the database session is still open here!
+        Double lat = valet.getCurrentLatitude();
+        Double lon = valet.getCurrentLongitude();
+        if (lat == null || lon == null) {
+            return ResponseEntity.unprocessableEntity()
+                    .body(Map.of("message", "Valet location not available yet"));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "valetId",   valet.getId(),
+                "latitude",  lat,
+                "longitude", lon
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  Private helpers
+    // ─────────────────────────────────────────────────────────────────────
     private double round(double val) {
         return Math.round(val * 100.0) / 100.0;
     }

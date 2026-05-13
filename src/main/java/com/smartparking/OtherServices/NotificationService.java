@@ -3,6 +3,7 @@ package com.smartparking.OtherServices;
 import com.smartparking.entities.NotificationHistory;
 import com.smartparking.repositories.NotificationHistoryRepository;
 import com.smartparking.websocket.NotificationWsMessage;
+import jakarta.transaction.Transactional;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,11 @@ public class NotificationService {
                                SimpMessagingTemplate messagingTemplate) {
         this.historyRepository = historyRepository;
         this.messagingTemplate = messagingTemplate;
+    }
+
+    @Transactional
+    public void clearAllNotifications(Long userId) {
+        historyRepository.deleteByUserId(userId);
     }
 
     // ── Core ────────────────────────────────────────────────────────────────
@@ -94,6 +100,24 @@ public class NotificationService {
                 customerName + " wants their car back. Please head to the parking lot now.",
                 "VALET");
     }
+
+    /**
+     * Sent to the customer when they tap "Request Car Back".
+     * They receive a push notification showing the OTP they need to
+     * confirm on screen (double safety in case they close the app).
+     *
+     * @param customerId  the customer's user ID
+     * @param otp         the 4-digit return confirmation OTP
+     * @param windowMins  time window in minutes before the OTP expires
+     */
+    public void notifyReturnConfirmOtp(Long customerId, String otp, int windowMins) {
+        notify(customerId,
+                "Confirm Your Return Request",
+                "Your confirmation OTP is " + otp + ". Enter it in the app within "
+                        + windowMins + " minutes to request your car back.",
+                "VALET");
+    }
+
 
     public void notifyJobCompleted(Long customerId, String valetName) {
         notify(customerId,

@@ -15,8 +15,8 @@ buildNumber.properties
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
-.env
 src/main/resources/application.properties
 target/
-.idea/.env 
-src/main/resources/application.properties 
+.idea/
+.env
+

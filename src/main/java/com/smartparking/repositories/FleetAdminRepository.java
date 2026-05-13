@@ -1,5 +1,14 @@
 package com.smartparking.repositories;
 
 import com.smartparking.entities.admins.FleetAdmin;
+import com.smartparking.entities.rental.RentalCompany;
 import org.springframework.data.jpa.repository.JpaRepository;
-public interface FleetAdminRepository extends JpaRepository<FleetAdmin, Long> {}
+
+import java.util.Optional;
+
+public interface FleetAdminRepository extends JpaRepository<FleetAdmin, Long> {
+
+    // FIX: Add this method to avoid loading all admins and filtering in Java
+    Optional<FleetAdmin> findByEmail(String email);
+
+}

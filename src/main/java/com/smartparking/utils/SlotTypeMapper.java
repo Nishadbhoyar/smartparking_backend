@@ -28,7 +28,7 @@ public class SlotTypeMapper {
      */
     public static Set<SlotType> compatibleSlots(VehicleType vehicleType) {
         return switch (vehicleType) {
-            case BIKE, SCOOTER -> Set.of(SlotType.BIKE);
+            case BIKE, SCOOTER, EV_BIKE -> Set.of(SlotType.BIKE, SlotType.EV_CHARGING);
             case TRUCK         -> Set.of(SlotType.HEAVY_VEHICLE, SlotType.TRUCK);
             case VAN           -> Set.of(SlotType.HEAVY_VEHICLE, SlotType.TRUCK, SlotType.BUS);
             case SUV           -> Set.of(SlotType.SUV, SlotType.REGULAR);
@@ -42,7 +42,7 @@ public class SlotTypeMapper {
      */
     public static SlotType defaultSlotType(VehicleType vehicleType) {
         return switch (vehicleType) {
-            case BIKE, SCOOTER -> SlotType.BIKE;
+            case BIKE, SCOOTER, EV_BIKE -> SlotType.BIKE;
             case TRUCK, VAN    -> SlotType.HEAVY_VEHICLE;
             case SUV           -> SlotType.SUV;
             case AUTO, CAR     -> SlotType.REGULAR;

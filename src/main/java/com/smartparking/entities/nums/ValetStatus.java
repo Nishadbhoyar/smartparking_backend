@@ -7,6 +7,7 @@ public enum ValetStatus {
     PICKED_UP,       // ← ADD THIS
     IN_PROGRESS,
     PARKED,
+    RETURN_CONFIRM_PENDING,
     RETURN_REQUESTED,
     COMPLETED,
     CANCELLED

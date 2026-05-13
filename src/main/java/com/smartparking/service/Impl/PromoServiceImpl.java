@@ -4,7 +4,6 @@ import com.smartparking.service.PromoService;
 import com.smartparking.dtos.request.ApplyPromoRequestDTO;
 import com.smartparking.dtos.request.CreatePromoRequestDTO;
 import com.smartparking.dtos.response.PromoResponseDTO;
-
 import com.smartparking.entities.featuresentites.PromoCode;
 import com.smartparking.entities.featuresentites.PromoUsage;
 import com.smartparking.entities.nums.BookingStatus;
@@ -16,29 +15,19 @@ import com.smartparking.repositories.PromoUsageRepository;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * REPLACE existing PromoServiceImpl.java
- * Location: com/smartparking/service/Impl/PromoServiceImpl.java
- *
- * Change: Added new-user check in applyPromo() and validatePromo()
- * If promo.isNewUsersOnly() == true:
- *   → Count customer's completed bookings
- *   → If count > 0 → reject with clear message
- *   → If count == 0 → allow
- */
 @Service
 public class PromoServiceImpl implements PromoService {
 
     @Autowired private PromoCodeRepository  promoCodeRepository;
     @Autowired private PromoUsageRepository promoUsageRepository;
-    @Autowired private BookingRepository    bookingRepository;   // ← NEW: to check booking history
+    @Autowired private BookingRepository    bookingRepository;
 
     @Override
     public PromoResponseDTO createPromo(CreatePromoRequestDTO dto) {
@@ -54,7 +43,7 @@ public class PromoServiceImpl implements PromoService {
                 .maxDiscountAmount(dto.getMaxDiscountAmount())
                 .minBookingAmount(dto.getMinBookingAmount())
                 .maxUses(dto.getMaxUses())
-                .newUsersOnly(dto.isNewUsersOnly())      // ← NEW
+                .newUsersOnly(dto.isNewUsersOnly())
                 .expiryDate(dto.getExpiryDate())
                 .build();
 
@@ -66,7 +55,6 @@ public class PromoServiceImpl implements PromoService {
         PromoCode promo = validateAndGetPromo(
                 dto.getCode(), dto.getBookingAmount(), dto.getCustomerId());
 
-        // Check one-use per customer
         if (promoUsageRepository.existsByPromoCodeIdAndCustomerId(
                 promo.getId(), dto.getCustomerId())) {
             throw new IllegalArgumentException(
@@ -76,18 +64,21 @@ public class PromoServiceImpl implements PromoService {
         double discount    = calculateDiscount(promo, dto.getBookingAmount());
         double finalAmount = dto.getBookingAmount() - discount;
 
-        // M-3 FIX: wrap save in try-catch.
-        // The unique constraint on (promo_code_id, customer_id) fires a DataIntegrityViolationException
-        // if two concurrent requests both pass the existsByPromoCodeIdAndCustomerId check before
-        // either one writes the usage row. The DB is the final authority.
         try {
             promoUsageRepository.save(PromoUsage.builder()
                     .promoCode(promo).customerId(dto.getCustomerId()).build());
         } catch (DataIntegrityViolationException ex) {
-            throw new IllegalArgumentException("You have already used promo code '" + dto.getCode() + "'.");
+            throw new IllegalArgumentException(
+                    "You have already used promo code '" + dto.getCode() + "'.");
         }
-        promo.setUsedCount(promo.getUsedCount() + 1);
-        promoCodeRepository.save(promo);
+
+        try {
+            promo.setUsedCount(promo.getUsedCount() + 1);
+            promoCodeRepository.save(promo);
+        } catch (OptimisticLockingFailureException e) {
+            throw new IllegalArgumentException(
+                    "Promo code usage limit reached. Please try again.");
+        }
 
         PromoResponseDTO response = mapToDTO(promo);
         response.setOriginalAmount(dto.getBookingAmount());
@@ -98,13 +89,9 @@ public class PromoServiceImpl implements PromoService {
     }
 
     @Override
-    // M-02 FIX: customerId is now optional (nullable).
-    // When provided, per-customer usage and new-user checks are enforced at validation time,
-    // so the customer gets an accurate answer before hitting /apply.
     public PromoResponseDTO validatePromo(String code, Double bookingAmount, Long customerId) {
         PromoCode promo = validateAndGetPromo(code, bookingAmount, customerId);
 
-        // M-02 FIX: Also check per-customer usage when customerId is present
         if (customerId != null && promoUsageRepository.existsByPromoCodeIdAndCustomerId(
                 promo.getId(), customerId)) {
             throw new IllegalArgumentException(
@@ -137,12 +124,28 @@ public class PromoServiceImpl implements PromoService {
         return mapToDTO(promoCodeRepository.save(promo));
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    //  Core validation — customerId is nullable (null = skip new-user check)
-    // ─────────────────────────────────────────────────────────────────────
-    private PromoCode validateAndGetPromo(String code, Double bookingAmount,
-                                          Long customerId) {
+    @Override
+    public List<PromoResponseDTO> getEligiblePromos(Long customerId, Double bookingAmount) {
+        List<PromoCode> candidates = promoCodeRepository
+                .findAllGloballyEligible(LocalDateTime.now());
 
+        long completedBookings = bookingRepository
+                .countByCustomerIdAndStatus(customerId, BookingStatus.COMPLETED);
+
+        return candidates.stream()
+                .filter(p -> !promoUsageRepository
+                        .existsByPromoCodeIdAndCustomerId(p.getId(), customerId))
+                .filter(p -> !p.isNewUsersOnly() || completedBookings == 0)
+                .filter(p -> bookingAmount == null
+                        || p.getMinBookingAmount() == null
+                        || bookingAmount >= p.getMinBookingAmount())
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    // ─── private helpers ───────────────────────────────────────────────────
+
+    private PromoCode validateAndGetPromo(String code, Double bookingAmount, Long customerId) {
         PromoCode promo = promoCodeRepository.findByCode(code.toUpperCase())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Promo code '" + code + "' does not exist."));
@@ -165,12 +168,9 @@ public class PromoServiceImpl implements PromoService {
                     "Minimum booking amount of ₹" + promo.getMinBookingAmount() +
                             " required to use this code.");
 
-        // ── NEW: New-user check ───────────────────────────────────────────
-        // Only run this check when customerId is provided (i.e. during apply)
         if (promo.isNewUsersOnly() && customerId != null) {
             long previousBookings = bookingRepository
                     .countByCustomerIdAndStatus(customerId, BookingStatus.COMPLETED);
-
             if (previousBookings > 0) {
                 throw new IllegalArgumentException(
                         "Sorry! This promo code '" + code +
@@ -196,12 +196,17 @@ public class PromoServiceImpl implements PromoService {
 
     private PromoResponseDTO mapToDTO(PromoCode p) {
         return PromoResponseDTO.builder()
-                .id(p.getId()).code(p.getCode()).type(p.getType())
+                .id(p.getId())
+                .code(p.getCode())
+                .type(p.getType())
                 .discountValue(p.getDiscountValue())
                 .maxDiscountAmount(p.getMaxDiscountAmount())
                 .minBookingAmount(p.getMinBookingAmount())
-                .maxUses(p.getMaxUses()).usedCount(p.getUsedCount())
-                .expiryDate(p.getExpiryDate()).isActive(p.isActive())
+                .maxUses(p.getMaxUses())
+                .usedCount(p.getUsedCount())       // was p.usageCount on frontend — root cause of "always 0"
+                .newUsersOnly(p.isNewUsersOnly())
+                .expiryDate(p.getExpiryDate())
+                .isActive(p.isActive())
                 .build();
     }
 }

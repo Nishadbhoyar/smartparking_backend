@@ -2,6 +2,7 @@ package com.smartparking.service;
 
 import com.smartparking.dtos.request.ValetBookingRequestDTO;
 import com.smartparking.dtos.response.ValetResponseDTO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -19,13 +20,25 @@ public interface ValetService {
 
     ValetResponseDTO verifyPickup(Long requestId, String enteredOtp);
 
-    ValetResponseDTO parkVehicle(Long requestId, Long lotId, Long slotId,
-                                 List<org.springframework.web.multipart.MultipartFile> carImages);
+    // NEW: Upload photos taken at pickup (before driving to the lot).
+    // Can be called when status is ACCEPTED or PICKED_UP.
+    ValetResponseDTO uploadPickupImages(Long requestId, List<MultipartFile> images,
+                                        Integer batteryLevelAtPickup);
 
-    ValetResponseDTO requestVehicleBack(Long requestId);
+    ValetResponseDTO parkVehicle(Long requestId, Long lotId, Long slotId,
+                                 List<MultipartFile> carImages, Integer batteryLevelAtParking);
+
+    // NEW: Generates a returnConfirmOtp and moves status to RETURN_CONFIRM_PENDING.
+    // The customer must confirm this OTP within 5 minutes.
+    ValetResponseDTO initiateReturnConfirmation(Long requestId);
+
+    // NEW: Validates the returnConfirmOtp. If correct and not expired,
+    // moves status to RETURN_REQUESTED and notifies the valet.
+    ValetResponseDTO confirmReturn(Long requestId, String otp);
 
     ValetResponseDTO verifyDropoff(Long requestId, String enteredOtp);
 
-    // NEW: customer dashboard needs the active valet job for this customer (if any)
     ValetResponseDTO getActiveValetForCustomer(Long customerId);
+
+    List<ValetResponseDTO> getCustomerValetHistory(Long customerId);
 }

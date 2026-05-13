@@ -3,6 +3,7 @@ package com.smartparking.controller;
 import com.smartparking.dtos.request.LoginRequestDTO;
 import com.smartparking.dtos.request.UserRegistrationDTO;
 import com.smartparking.dtos.response.AuthResponseDTO;
+import com.smartparking.dtos.response.UserResponseDTO;
 
 import com.smartparking.entities.users.PasswordResetToken;
 import com.smartparking.entities.users.User;
@@ -20,6 +21,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import com.smartparking.security.TokenBlacklistService;
+import com.smartparking.repositories.RentalCompanyRepository;
+import com.smartparking.entities.nums.Role;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -30,30 +33,48 @@ import java.util.Random;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    @Autowired private AuthenticationManager          authenticationManager;
-    @Autowired private UserRepository                 userRepository;
-    @Autowired private PasswordResetTokenRepository   resetTokenRepository;
-    @Autowired private JwtUtil                        jwtUtil;
-    @Autowired private UserService                    userService;
-    @Autowired private EmailService                   emailService;
-    @Autowired private PasswordEncoder                passwordEncoder;
-    @Autowired private TokenBlacklistService          tokenBlacklistService;
+    @Autowired
+    private  AuthenticationManager  authenticationManager;
+
+    @Autowired
+    private UserRepository  userRepository;
+
+    @Autowired
+    private PasswordResetTokenRepository   resetTokenRepository;
+
+    @Autowired
+    private JwtUtil                        jwtUtil;
+
+    @Autowired
+    private UserService                    userService;
+
+    @Autowired
+    private EmailService                   emailService;
+
+    @Autowired
+    private PasswordEncoder                passwordEncoder;
+
+    @Autowired
+    private TokenBlacklistService          tokenBlacklistService;
+
+    @Autowired
+    private RentalCompanyRepository         rentalCompanyRepository;
 
     // ── Register ───────────────────────────────────────────────────────────
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody UserRegistrationDTO dto) {
-        userService.registerUser(dto);
-        User savedUser = userRepository.findByEmail(dto.getEmail()).orElseThrow();
-        String token   = jwtUtil.generateToken(savedUser.getEmail(), savedUser.getRole().name());
+        UserResponseDTO saved = userService.registerUser(dto);
+        String token = jwtUtil.generateToken(saved.getEmail(), saved.getRole().name());
         AuthResponseDTO response = new AuthResponseDTO(
-                token, savedUser.getId(), savedUser.getName(), savedUser.getEmail(), savedUser.getRole()
+                token, saved.getId(), saved.getName(), saved.getEmail(), saved.getRole()
         );
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     // ── Login ──────────────────────────────────────────────────────────────
     @PostMapping("/login")
-    public ResponseEntity<AuthResponseDTO> login(@RequestBody LoginRequestDTO dto) {
+    public ResponseEntity<AuthResponseDTO> login(
+            @Valid @RequestBody LoginRequestDTO dto) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(dto.getEmail(), dto.getPassword())
         );
@@ -63,6 +84,11 @@ public class AuthController {
         AuthResponseDTO response = new AuthResponseDTO(
                 token, user.getId(), user.getName(), user.getEmail(), user.getRole()
         );
+        // Populate companyId for FLEET_ADMIN so frontend can call /company/{companyId}/list
+        if (user.getRole() == Role.FLEET_ADMIN) {
+            rentalCompanyRepository.findByFleetAdminId(user.getId())
+                    .ifPresent(company -> response.setCompanyId(company.getId()));
+        }
         return ResponseEntity.ok(response);
     }
     // ── Forgot Password — Step 1: Send OTP ────────────────────────────────

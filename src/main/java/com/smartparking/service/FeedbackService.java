@@ -11,4 +11,5 @@ public interface FeedbackService {
     List<FeedbackResponseDTO> getValetFeedback(Long valetId);
     Double getLotAverageRating(Long lotId);
     Double getValetAverageRating(Long valetId);
+    void deleteFeedback(Long feedbackId);
 }

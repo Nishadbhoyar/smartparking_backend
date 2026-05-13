@@ -1,18 +1,17 @@
 package com.smartparking.dtos.request;
 
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+
 
 @Data
 public class BookingRequestDTO {
     private Long customerId;
     private Long parkingLotId;
+    private Long slotId;
     private String slotType;
-    private LocalDateTime entryTime;
-    private LocalDateTime exitTime;
+    private OffsetDateTime entryTime;
+    private OffsetDateTime exitTime;
     private boolean isValetBooking;
-
-    // C-3 / C-4 FIX: totalAmount removed — backend recalculates it.
-    // promoCode added — backend applies discount atomically and records usage.
-    private String promoCode;   // optional, null means no promo
+    private String promoCode;
 }

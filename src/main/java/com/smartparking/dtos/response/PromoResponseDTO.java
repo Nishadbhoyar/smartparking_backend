@@ -16,8 +16,9 @@ public class PromoResponseDTO {
     private Integer       usedCount;
     private LocalDateTime expiryDate;
     private boolean       isActive;
+    private boolean       newUsersOnly;   // ADDED: frontend needs this for "New users only" badge
 
-    // Returned when applying promo
+    // Returned when applying/validating promo
     private Double  originalAmount;
     private Double  discountAmount;
     private Double  finalAmount;

@@ -24,4 +24,8 @@ public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
     // 4. Automatically calculates the average star rating for a valet!
     @Query("SELECT AVG(f.rating) FROM Feedback f WHERE f.valet.id = :valetId")
     Double getAverageRatingForValet(@Param("valetId") Long valetId);
+
+    Feedback findFirstByCustomerIdAndValetIdOrderByCreatedAtDesc(Long customerId, Long valetId);
+
+    Feedback findFirstByCustomerIdAndParkingLotIdOrderByCreatedAtDesc(Long customerId, Long parkingLotId);
 }

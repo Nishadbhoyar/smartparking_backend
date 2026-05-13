@@ -6,11 +6,10 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * REPLACE existing PromoCode.java
- * Location: com/smartparking/entities/PromoCode.java
- *
- * Change: Added `newUsersOnly` flag
- * If true → only customers with 0 previous completed bookings can use this code
+ * PromoCode entity.
+ * @Data generates all getters/setters — do NOT add manual ones or Lombok
+ * will produce duplicate method errors.
+ * @Version enables JPA optimistic locking for concurrent promo usage.
  */
 @Entity
 @Table(name = "promo_codes")
@@ -33,12 +32,16 @@ public class PromoCode {
     private Integer maxUses;
     private Integer usedCount;
 
-    // NEW: if true → only customers with 0 previous bookings can use this
+    /** If true → only customers with 0 previous completed bookings can use this */
     private boolean newUsersOnly;
 
     private LocalDateTime expiryDate;
     private boolean isActive;
     private LocalDateTime createdAt;
+
+    /** Optimistic locking — prevents concurrent over-use of a promo code */
+    @Version
+    private Long version;
 
     @PrePersist
     public void prePersist() {

@@ -105,6 +105,7 @@ public class SlotServiceImpl implements SlotService {
 
         List<Slot> slotsToSave = new ArrayList<>();
 
+        // --- NEW FRONTEND FORMAT (Single Type) ---
         if (request.getVehicleType() != null && request.getCount() != null && request.getCount() > 0) {
             SlotType  type   = request.getVehicleType();
             int       count  = request.getCount();
@@ -127,25 +128,36 @@ public class SlotServiceImpl implements SlotService {
                     slotsToSave.size(), type, floor, lot.getName());
         }
 
+        // --- LEGACY/MULTI-TYPE FORMAT ---
         int regularCount = nvl(request.getRegularCount());
         int evCount      = nvl(request.getEvCount());
         int hvCount      = nvl(request.getHeavyVehicleCount());
         int bikeCount    = nvl(request.getBikeCount());
-        double rate      = request.getDefaultHourlyRate();
+
+        // 🚨 GET SPECIFIC RATES (Fallback to defaultHourlyRate if null)
+        double defRate   = request.getDefaultHourlyRate();
+        double regRate   = request.getRegularRate() != null ? request.getRegularRate() : defRate;
+        double evRate    = request.getEvRate() != null ? request.getEvRate() : defRate;
+        double hvRate    = request.getHeavyVehicleRate() != null ? request.getHeavyVehicleRate() : defRate;
+        double bikeRate  = request.getBikeRate() != null ? request.getBikeRate() : defRate;
 
         long existingReg  = slotRepository.countByParkingLotIdAndSlotType(lot.getId(), SlotType.REGULAR);
         long existingEv   = slotRepository.countByParkingLotIdAndSlotType(lot.getId(), SlotType.EV_CHARGING);
         long existingHv   = slotRepository.countByParkingLotIdAndSlotType(lot.getId(), SlotType.HEAVY_VEHICLE);
         long existingBike = slotRepository.countByParkingLotIdAndSlotType(lot.getId(), SlotType.BIKE);
 
+        // 🚨 PASS THE SPECIFIC RATES INTO buildSlot()
         for (long i = existingReg + 1;  i <= existingReg  + regularCount; i++)
-            slotsToSave.add(buildSlot(lot, "REG-"  + i, SlotType.REGULAR,       "G", rate));
+            slotsToSave.add(buildSlot(lot, "REG-"  + i, SlotType.REGULAR,       "G", regRate));
+
         for (long i = existingEv + 1;   i <= existingEv   + evCount;      i++)
-            slotsToSave.add(buildSlot(lot, "EV-"   + i, SlotType.EV_CHARGING,   "G", rate));
+            slotsToSave.add(buildSlot(lot, "EV-"   + i, SlotType.EV_CHARGING,   "G", evRate));
+
         for (long i = existingHv + 1;   i <= existingHv   + hvCount;      i++)
-            slotsToSave.add(buildSlot(lot, "HV-"   + i, SlotType.HEAVY_VEHICLE, "G", rate));
+            slotsToSave.add(buildSlot(lot, "HV-"   + i, SlotType.HEAVY_VEHICLE, "G", hvRate));
+
         for (long i = existingBike + 1; i <= existingBike + bikeCount;    i++)
-            slotsToSave.add(buildSlot(lot, "BIKE-" + i, SlotType.BIKE,          "G", rate));
+            slotsToSave.add(buildSlot(lot, "BIKE-" + i, SlotType.BIKE,          "G", bikeRate));
 
         slotRepository.saveAll(slotsToSave);
         return String.format(

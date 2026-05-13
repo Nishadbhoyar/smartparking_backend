@@ -6,6 +6,7 @@ import com.smartparking.entities.admins.CarOwner;
 import com.smartparking.entities.admins.FleetAdmin;
 import com.smartparking.entities.admins.ParkingLotAdmin;
 import com.smartparking.entities.admins.SuperAdmin;
+import com.smartparking.entities.nums.Role;
 import com.smartparking.entities.users.Customer;
 import com.smartparking.entities.users.User;
 import com.smartparking.entities.valet.Valet;
@@ -16,35 +17,37 @@ import com.smartparking.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
 import java.util.Map;
 
 @Service
 public class UserServiceImpl implements UserService {
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    private PasswordEncoder            passwordEncoder;
 
     @Autowired
-    private UserRepository userRepository;
+    private UserRepository             userRepository;
 
     @Autowired
-    private ParkingLotAdminRepository parkingLotAdminRepository;
+    private ParkingLotAdminRepository  parkingLotAdminRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private CustomerRepository         customerRepository;
 
     @Autowired
-    private ValetRepository valetRepository;
+    private ValetRepository            valetRepository;
 
     @Autowired
-    private SuperAdminRepository superAdminRepository;
+    private SuperAdminRepository       superAdminRepository;
 
     @Autowired
-    private CarOwnerRepository carOwnerRepository;
+    private CarOwnerRepository         carOwnerRepository;
 
     @Autowired
-    private FleetAdminRepository fleetAdminRepository;
+    FleetAdminRepository       fleetAdminRepository;
 
+    // ── Public self-registration (only SUPER_ADMIN is blocked — created via SQL) ──
     @Override
     public UserResponseDTO registerUser(UserRegistrationDTO dto) {
         if (userRepository.existsByEmail(dto.getEmail())) {
@@ -52,56 +55,67 @@ public class UserServiceImpl implements UserService {
                     "Registration failed: Email " + dto.getEmail() + " is already in use.");
         }
 
-        User savedUser;
+        if (dto.getRole() == Role.SUPER_ADMIN) {
+            throw new IllegalArgumentException(
+                    "Super Admin accounts are created by the platform administrator.");
+        }
 
+
+        return mapToResponseDTO(createUserByRole(dto));
+    }
+
+    // ── Admin-initiated creation (all roles allowed except SUPER_ADMIN) ──────
+    @Override
+    public UserResponseDTO registerUserByAdmin(UserRegistrationDTO dto) {
+        if (userRepository.existsByEmail(dto.getEmail())) {
+            throw new DuplicateResourceException(
+                    "Email " + dto.getEmail() + " is already in use.");
+        }
+        return mapToResponseDTO(createUserByRole(dto));
+    }
+
+    // ── Shared core: build and save the correct subtype ─────────────────────
+    private User createUserByRole(UserRegistrationDTO dto) {
         switch (dto.getRole()) {
             case PARKING_LOT_ADMIN: {
                 ParkingLotAdmin admin = new ParkingLotAdmin();
                 mapCommonFields(admin, dto);
                 admin.setBusinessRegistrationNumber(dto.getBusinessRegistrationNumber());
-                savedUser = parkingLotAdminRepository.save(admin);
-                break;
+                return parkingLotAdminRepository.save(admin);
             }
             case SUPER_ADMIN: {
                 SuperAdmin superAdmin = new SuperAdmin();
                 mapCommonFields(superAdmin, dto);
-                savedUser = superAdminRepository.save(superAdmin);
-                break;
+                return superAdminRepository.save(superAdmin);
             }
             case CAR_OWNER: {
                 CarOwner carOwner = new CarOwner();
                 mapCommonFields(carOwner, dto);
                 carOwner.setAadhaarNumber(dto.getAadhaarNumber());
-                savedUser = carOwnerRepository.save(carOwner);
-                break;
+                return carOwnerRepository.save(carOwner);
             }
             case FLEET_ADMIN: {
                 FleetAdmin fleetAdmin = new FleetAdmin();
                 mapCommonFields(fleetAdmin, dto);
                 fleetAdmin.setBusinessPhone(dto.getBusinessPhone());
-                savedUser = fleetAdminRepository.save(fleetAdmin);
-                break;
+                return fleetAdminRepository.save(fleetAdmin);
             }
             case CUSTOMER: {
                 Customer customer = new Customer();
                 mapCommonFields(customer, dto);
                 customer.setDefaultLicensePlate(dto.getDefaultLicensePlate());
-                savedUser = customerRepository.save(customer);
-                break;
+                return customerRepository.save(customer);
             }
             case VALET: {
                 Valet valet = new Valet();
                 mapCommonFields(valet, dto);
                 valet.setDrivingLicenseNumber(dto.getDrivingLicenseNumber());
                 valet.setAvailableNow(true);
-                savedUser = valetRepository.save(valet);
-                break;
+                return valetRepository.save(valet);
             }
             default:
                 throw new IllegalArgumentException("Invalid Role provided!");
         }
-
-        return mapToResponseDTO(savedUser);
     }
 
     @Override
@@ -128,7 +142,7 @@ public class UserServiceImpl implements UserService {
     private void mapCommonFields(User user, UserRegistrationDTO dto) {
         user.setName(dto.getName());
         user.setEmail(dto.getEmail());
-        user.setPassword(passwordEncoder.encode(dto.getPassword())); // BCrypt hashed
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setRole(dto.getRole());
     }
 

@@ -1,30 +1,47 @@
 package com.smartparking.security;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.Set;
+import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * M-2 FIX: In-memory JWT blacklist.
- *
- * When a user logs out, their token is added here.
- * JwtAuthFilter checks this before trusting any token.
- *
- * Trade-off: entries are lost on server restart (acceptable for a single-instance app).
- * For multi-instance or persistent blacklisting, replace the Set with a Redis TTL key.
+ * JWT blacklist service.
+ * Tokens are stored with their expiry time so the map self-prunes.
+ * Entries are lost on server restart — acceptable for single-instance deployment.
  */
 @Service
 public class TokenBlacklistService {
 
-    private final Set<String> blacklist = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    // Map<token, expiry> — avoids unbounded memory growth
+    private final Map<String, Instant> blacklist = new ConcurrentHashMap<>();
 
     public void blacklist(String token) {
-        blacklist.add(token);
+        Instant expiry = jwtUtil.extractExpiry(token);
+        blacklist.put(token, expiry);
     }
 
     public boolean isBlacklisted(String token) {
-        return blacklist.contains(token);
+        Instant expiry = blacklist.get(token);
+        if (expiry == null) return false;
+        // Auto-evict if already past expiry — token would be rejected by JwtUtil anyway
+        if (expiry.isBefore(Instant.now())) {
+            blacklist.remove(token);
+            return false;
+        }
+        return true;
+    }
+
+    // Hourly sweep to clean up any tokens not yet lazily evicted
+    @Scheduled(fixedRate = 3_600_000)
+    public void evictExpired() {
+        Instant now = Instant.now();
+        blacklist.entrySet().removeIf(e -> e.getValue().isBefore(now));
     }
 }

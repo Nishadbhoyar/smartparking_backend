@@ -5,6 +5,7 @@ import com.smartparking.exceptions.ResourceNotFoundException;
 import com.smartparking.repositories.ValetRepository;
 import com.smartparking.utils.GeoUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
@@ -126,9 +127,24 @@ public class NearestValetService {
      * Uses the updateLocation() query in ValetRepository
      * to update the Valet's currentLatitude, currentLongitude, isAvailableNow.
      */
-    public void updateValetLocation(Long valetId, double lat,
-                                    double lon, boolean available) {
-        valetRepository.updateLocation(valetId, lat, lon, available);
+    // ─────────────────────────────────────────────────────────────────────
+    //  Valet app sends GPS ping every 5 seconds → update their location
+    // ─────────────────────────────────────────────────────────────────────
+
+    @Transactional
+    public void updateValetLocation(Long valetId, double lat, double lon, boolean available) {
+
+        Valet valet = valetRepository.findById(valetId)
+                .orElseThrow(() -> new ResourceNotFoundException("Valet not found"));
+
+        // 1. ALWAYS update the coordinates, whether the valet is busy or free!
+        valet.setCurrentLatitude(lat);
+        valet.setCurrentLongitude(lon);
+
+        // 2. DO NOT call valetRepository.updateLocation(...) or update isAvailableNow here.
+        // The ping should only update GPS coordinates. Availability is handled by acceptJob/completeJob.
+
+        valetRepository.save(valet);
     }
 
     // ─────────────────────────────────────────────────────────────────────

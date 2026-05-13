@@ -2,10 +2,14 @@ package com.smartparking.controller;
 
 import com.smartparking.dtos.request.BookingRequestDTO;
 import com.smartparking.dtos.response.BookingResponseDTO;
+import com.smartparking.entities.users.Customer;
+import com.smartparking.exceptions.UnauthorizedAccessException;
+import com.smartparking.repositories.CustomerRepository;
 import com.smartparking.service.BookingService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,6 +21,9 @@ public class BookingController {
     @Autowired
     private BookingService bookingService;
 
+    @Autowired
+    private CustomerRepository customerRepository;
+
     @PostMapping("/reserve")
     public ResponseEntity<BookingResponseDTO> reserveSlot(@RequestBody BookingRequestDTO requestDTO) {
         return new ResponseEntity<>(bookingService.createBooking(requestDTO), HttpStatus.CREATED);
@@ -27,14 +34,21 @@ public class BookingController {
         return ResponseEntity.ok(bookingService.getBookingById(bookingId));
     }
 
-    @PostMapping("/{bookingId}/cancel")
-    public ResponseEntity<BookingResponseDTO> cancelBooking(@PathVariable Long bookingId) {
-        return ResponseEntity.ok(bookingService.cancelBooking(bookingId));
-    }
-
+    // FIX #4: ownership check — customer can only view own bookings
+    // OLD getCustomerBookings() removed — duplicate mapping on same URL
     @GetMapping("/customer/{customerId}")
-    public ResponseEntity<List<BookingResponseDTO>> getCustomerBookings(@PathVariable Long customerId) {
-        return new ResponseEntity<>(bookingService.getBookingsByCustomer(customerId), HttpStatus.OK);
+    public ResponseEntity<List<BookingResponseDTO>> getBookingsByCustomer(
+            @PathVariable Long customerId,
+            Authentication auth) {
+
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
+
+        if (!auth.getName().equals(customer.getEmail())) {
+            throw new UnauthorizedAccessException("You can only view your own bookings.");
+        }
+
+        return ResponseEntity.ok(bookingService.getBookingsByCustomer(customerId));
     }
 
     @PostMapping("/verify-code")
@@ -54,9 +68,14 @@ public class BookingController {
         return new ResponseEntity<>(bookingService.getBookingsByLot(lotId), HttpStatus.OK);
     }
 
-    // NEW — was missing, caused the 500
     @GetMapping("/lot-admin/{adminId}")
     public ResponseEntity<List<BookingResponseDTO>> getBookingsByAdmin(@PathVariable Long adminId) {
         return new ResponseEntity<>(bookingService.getBookingsByAdmin(adminId), HttpStatus.OK);
     }
+
+    @PostMapping("/{bookingId}/cancel")
+    public ResponseEntity<BookingResponseDTO> cancelBooking(@PathVariable Long bookingId) {
+        return ResponseEntity.ok(bookingService.cancelBooking(bookingId));
+    }
+
 }

@@ -5,7 +5,8 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Date;
 
 @Component
@@ -17,32 +18,32 @@ public class JwtUtil {
     @Value("${jwt.expiration-ms}")
     private long expirationMs;
 
-    private Key getSigningKey() {
+    private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());
     }
 
-    /** Generate a JWT for the given email and role */
     public String generateToken(String email, String role) {
         return Jwts.builder()
-                .setSubject(email)
+                .subject(email)
                 .claim("role", role)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .signWith(getSigningKey())
                 .compact();
     }
 
-    /** Extract the email (subject) from a token */
     public String extractEmail(String token) {
         return parseClaims(token).getSubject();
     }
 
-    /** Extract the role claim from a token */
     public String extractRole(String token) {
         return (String) parseClaims(token).get("role");
     }
 
-    /** Return true if the token is valid and not expired */
+    public Instant extractExpiry(String token) {
+        return parseClaims(token).getExpiration().toInstant();
+    }
+
     public boolean isTokenValid(String token) {
         try {
             parseClaims(token);
@@ -53,10 +54,10 @@ public class JwtUtil {
     }
 
     private Claims parseClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

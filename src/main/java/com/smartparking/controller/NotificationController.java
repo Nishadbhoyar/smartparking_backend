@@ -98,7 +98,8 @@ public class NotificationController {
     // DELETE /api/notifications/clear/{userId}
     @DeleteMapping("/clear/{userId}")
     public ResponseEntity<String> clearAll(@PathVariable Long userId) {
-        historyRepository.deleteByUserId(userId);
+        // Change this line to use the service instead of the repository
+        notificationService.clearAllNotifications(userId);
         return ResponseEntity.ok("Cleared");
     }
 }

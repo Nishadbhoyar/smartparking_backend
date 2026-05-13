@@ -1,6 +1,6 @@
 package com.smartparking.entities.rental;
 
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.smartparking.entities.admins.FleetAdmin;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -25,10 +25,12 @@ public class RentalCompany {
     private String contactPhone;
     private boolean platformVerified = false;
 
+    @JsonIgnore
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "fleet_admin_id", nullable = false)
     private FleetAdmin fleetAdmin;
 
-    @OneToMany(mappedBy = "rentalCompany", cascade = CascadeType.ALL)
+    @JsonIgnore
+    @OneToMany(mappedBy = "rentalCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<RentalCar> fleet;
 }

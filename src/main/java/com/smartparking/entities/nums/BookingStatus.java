@@ -1,8 +1,9 @@
 package com.smartparking.entities.nums;
 
 public enum BookingStatus {
-    PENDING,   // Added for when a user books on their phone but hasn't arrived yet
-    ACTIVE,    // They are currently parked in the lot
-    COMPLETED, // They have left the lot
+    PENDING,    // Booked but payment not yet done
+    PAID,       // Payment confirmed — user has NOT physically arrived yet
+    ACTIVE,     // User has scanned their entry code and is physically parked
+    COMPLETED,  // User has checked out
     CANCELLED
 }

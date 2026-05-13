@@ -1,6 +1,7 @@
 package com.smartparking.entities.valet;
 
 import com.smartparking.entities.nums.ValetStatus;
+import com.smartparking.entities.nums.VehicleType;
 import com.smartparking.entities.parking.ParkingLot;
 import com.smartparking.entities.parking.Slot;
 import com.smartparking.entities.users.Customer;
@@ -67,10 +68,19 @@ public class ValetRequest {
     @JoinColumn(name = "slot_id")
     private Slot slot;
 
-    @ElementCollection
-    @CollectionTable(name = "valet_car_images", joinColumns = @JoinColumn(name = "valet_request_id"))
-    @Column(name = "image_url")
-    private List<String> carImages;
+    @OneToMany(mappedBy = "valetRequest", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    private List<ValetCarImage> carImages = new java.util.ArrayList<>();
+
+    // EV Bike support
+    @Enumerated(EnumType.STRING)
+    private VehicleType vehicleType;
+
+    private Integer batteryLevelAtPickup;
+    private Integer batteryLevelAtParking;
+
+    // Return confirmation OTP (2-step return flow)
+    private String returnConfirmOtp;
+    private LocalDateTime returnConfirmOtpExpiry;
 
     private LocalDateTime requestedAt;
     private LocalDateTime parkedAt;

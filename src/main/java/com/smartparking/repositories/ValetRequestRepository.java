@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,4 +55,6 @@ public interface ValetRequestRepository extends JpaRepository<ValetRequest, Long
     long countByParkingLotIdInAndStatusAndCompletedAtBetween(
             List<Long> lotIds, ValetStatus status,
             LocalDateTime start, LocalDateTime end);
+
+    List<ValetRequest> findByCustomerId(Long customerId);;
 }

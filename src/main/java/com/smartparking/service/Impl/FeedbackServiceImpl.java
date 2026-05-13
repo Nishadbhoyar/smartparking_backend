@@ -46,23 +46,47 @@ public class FeedbackServiceImpl implements FeedbackService {
                     "Feedback must be attached to either a Parking Lot or a Valet.");
         }
 
-        Feedback feedback = new Feedback();
-        feedback.setRating(requestDTO.getRating());
-        feedback.setComment(requestDTO.getComment());
-        feedback.setCustomer(customer);
+        Feedback feedback = null;
 
+        // 1. Check if rating a Parking Lot
         if (requestDTO.getParkingLotId() != null) {
             ParkingLot lot = parkingLotRepository.findById(requestDTO.getParkingLotId())
                     .orElseThrow(() -> new ResourceNotFoundException("Parking Lot not found!"));
-            feedback.setParkingLot(lot);
+
+            // Try to find an existing review
+            feedback = feedbackRepository.findFirstByCustomerIdAndParkingLotIdOrderByCreatedAtDesc(
+                    customer.getId(), lot.getId());
+
+            // If no review exists, create a new one
+            if (feedback == null) {
+                feedback = new Feedback();
+                feedback.setCustomer(customer);
+                feedback.setParkingLot(lot);
+            }
         }
 
-        if (requestDTO.getValetId() != null) {
+        // 2. Check if rating a Valet
+        else if (requestDTO.getValetId() != null) {
             Valet valet = valetRepository.findById(requestDTO.getValetId())
                     .orElseThrow(() -> new ResourceNotFoundException("Valet not found!"));
-            feedback.setValet(valet);
+
+            // Try to find an existing review
+            feedback = feedbackRepository.findFirstByCustomerIdAndValetIdOrderByCreatedAtDesc(
+                    customer.getId(), valet.getId());
+
+            // If no review exists, create a new one
+            if (feedback == null) {
+                feedback = new Feedback();
+                feedback.setCustomer(customer);
+                feedback.setValet(valet);
+            }
         }
 
+        // 3. Apply the new rating and comment (updates existing OR populates new)
+        feedback.setRating(requestDTO.getRating());
+        feedback.setComment(requestDTO.getComment());
+
+        // 4. Save to database
         Feedback savedFeedback = feedbackRepository.save(feedback);
         return mapToResponseDTO(savedFeedback);
     }
@@ -109,5 +133,15 @@ public class FeedbackServiceImpl implements FeedbackService {
         if (feedback.getParkingLot() != null) dto.setParkingLotId(feedback.getParkingLot().getId());
         if (feedback.getValet()      != null) dto.setValetId(feedback.getValet().getId());
         return dto;
+    }
+
+    // 🚨 ADD THIS METHOD AT THE BOTTOM OF FeedbackServiceImpl.java 🚨
+    @Override
+    @Transactional
+    public void deleteFeedback(Long feedbackId) {
+        if (!feedbackRepository.existsById(feedbackId)) {
+            throw new ResourceNotFoundException("Feedback not found");
+        }
+        feedbackRepository.deleteById(feedbackId);
     }
 }
