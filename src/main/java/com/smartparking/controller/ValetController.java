@@ -6,6 +6,7 @@ import com.smartparking.entities.valet.ValetCarImage;
 import com.smartparking.exceptions.ResourceNotFoundException;
 import com.smartparking.repositories.UserRepository;
 import com.smartparking.repositories.ValetCarImageRepository;
+import com.smartparking.repositories.ValetRepository;
 import com.smartparking.service.ValetService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,9 @@ public class ValetController {
     // NEW: needed to resolve the JWT email to a user ID for ownership check
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ValetRepository valetRepository ;
 
     // ── existing endpoints (unchanged) ─────────────────────────────────────
 
@@ -164,5 +168,22 @@ public class ValetController {
             @PathVariable Long requestId,
             @RequestParam String otp) {
         return new ResponseEntity<>(valetService.confirmReturn(requestId, otp), HttpStatus.OK);
+    }
+
+    @PutMapping("/{valetId}/status")
+    public ResponseEntity<java.util.Map<String, Object>> updateValetStatus(
+            @PathVariable Long valetId,
+            @RequestParam boolean isAvailable) {
+
+        if (isAvailable) {
+            valetRepository.markAsFree(valetId);
+        } else {
+            valetRepository.markAsBusy(valetId);
+        }
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "message", "Status updated successfully",
+                "isAvailable", isAvailable
+        ));
     }
 }

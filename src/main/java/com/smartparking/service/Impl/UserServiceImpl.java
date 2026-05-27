@@ -48,18 +48,23 @@ public class UserServiceImpl implements UserService {
     FleetAdminRepository       fleetAdminRepository;
 
     // ── Public self-registration (only SUPER_ADMIN is blocked — created via SQL) ──
-    @Override
     public UserResponseDTO registerUser(UserRegistrationDTO dto) {
         if (userRepository.existsByEmail(dto.getEmail())) {
             throw new DuplicateResourceException(
                     "Registration failed: Email " + dto.getEmail() + " is already in use.");
         }
 
+        // ADD THIS CHECK:
+        if (dto.getPhoneNumber() != null && !dto.getPhoneNumber().isBlank() &&
+                userRepository.existsByPhoneNumber(dto.getPhoneNumber().trim())) {
+            throw new DuplicateResourceException(
+                    "Registration failed: Phone number " + dto.getPhoneNumber() + " is already in use.");
+        }
+
         if (dto.getRole() == Role.SUPER_ADMIN) {
             throw new IllegalArgumentException(
                     "Super Admin accounts are created by the platform administrator.");
         }
-
 
         return mapToResponseDTO(createUserByRole(dto));
     }
@@ -71,6 +76,14 @@ public class UserServiceImpl implements UserService {
             throw new DuplicateResourceException(
                     "Email " + dto.getEmail() + " is already in use.");
         }
+
+        // ADD THIS CHECK:
+        if (dto.getPhoneNumber() != null && !dto.getPhoneNumber().isBlank() &&
+                userRepository.existsByPhoneNumber(dto.getPhoneNumber().trim())) {
+            throw new DuplicateResourceException(
+                    "Phone number " + dto.getPhoneNumber() + " is already in use.");
+        }
+
         return mapToResponseDTO(createUserByRole(dto));
     }
 
@@ -136,6 +149,18 @@ public class UserServiceImpl implements UserService {
         if (body.containsKey("password") && body.get("password").length() >= 6) {
             user.setPassword(passwordEncoder.encode(body.get("password")));
         }
+        // ADD THIS BLOCK FOR PHONE UPDATES:
+        if (body.containsKey("phoneNumber") && !body.get("phoneNumber").isBlank()) {
+            String newPhone = body.get("phoneNumber").trim();
+
+            // Only check uniqueness if the phone number is actually changing
+            if (!newPhone.equals(user.getPhoneNumber())) {
+                if (userRepository.existsByPhoneNumber(newPhone)) {
+                    throw new DuplicateResourceException("Phone number is already in use by another account.");
+                }
+                user.setPhoneNumber(newPhone);
+            }
+        }
         return mapToResponseDTO(userRepository.save(user));
     }
 
@@ -144,6 +169,7 @@ public class UserServiceImpl implements UserService {
         user.setEmail(dto.getEmail());
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setRole(dto.getRole());
+        user.setPhoneNumber(dto.getPhoneNumber());
     }
 
     private UserResponseDTO mapToResponseDTO(User user) {
@@ -152,6 +178,7 @@ public class UserServiceImpl implements UserService {
         dto.setName(user.getName());
         dto.setEmail(user.getEmail());
         dto.setRole(user.getRole());
+        dto.setPhoneNumber(user.getPhoneNumber());
 
         if (user instanceof Customer) {
             dto.setDefaultLicensePlate(((Customer) user).getDefaultLicensePlate());

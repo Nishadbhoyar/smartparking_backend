@@ -15,4 +15,6 @@ public interface UserService {
     UserResponseDTO getUserByEmail(String email);
 
     UserResponseDTO updateProfile(Long userId, Map<String, String> body);
+
+
 }

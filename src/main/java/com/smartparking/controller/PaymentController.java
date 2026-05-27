@@ -1,11 +1,13 @@
 package com.smartparking.controller;
 
 import com.smartparking.OtherServices.CashfreePaymentService;
+import com.smartparking.dtos.ReceiptResponseDTO;
 import com.smartparking.dtos.request.PaymentInitiateRequestDTO;
 import com.smartparking.dtos.request.RefundRequestDTO;
 import com.smartparking.dtos.response.PaymentResponseDTO;
 import com.smartparking.entities.nums.ServiceType;
 
+import com.smartparking.exceptions.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -134,6 +136,24 @@ public class PaymentController {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             log.error("Refund failed", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/receipt")
+    public ResponseEntity<ReceiptResponseDTO> getReceipt(
+            @RequestParam Long bookingId) {
+        try {
+            ReceiptResponseDTO receipt = paymentService.getReceiptForBooking(bookingId);
+            return ResponseEntity.ok(receipt);
+        } catch (ResourceNotFoundException e) {
+            log.warn("Receipt requested for unknown bookingId={}", bookingId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (IllegalStateException e) {
+            log.warn("No payment for bookingId={}: {}", bookingId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (Exception e) {
+            log.error("Failed to build receipt for bookingId={}", bookingId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

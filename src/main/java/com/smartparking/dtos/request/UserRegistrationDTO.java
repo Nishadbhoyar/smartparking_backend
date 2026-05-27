@@ -23,4 +23,8 @@ public class UserRegistrationDTO {
 
     // PARKING_LOT_ADMIN
     private String businessRegistrationNumber;
+
+    // Add this inside UserRegistrationDTO.java (around line 10, below role)
+
+    private String phoneNumber;
 }

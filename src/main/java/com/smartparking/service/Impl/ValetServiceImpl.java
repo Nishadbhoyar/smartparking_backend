@@ -279,7 +279,14 @@ public class ValetServiceImpl implements ValetService {
     public ValetResponseDTO initiateReturnConfirmation(Long requestId) {
         ValetRequest request = getRequest(requestId);
 
-        if (request.getStatus() != ValetStatus.PARKED) {
+        // Allow re-initiation if OTP already expired
+        if (request.getStatus() == ValetStatus.RETURN_CONFIRM_PENDING) {
+            if (LocalDateTime.now().isAfter(request.getReturnConfirmOtpExpiry())) {
+                // OTP expired — fall through and regenerate
+            } else {
+                throw new RuntimeException("Return confirmation already pending and not yet expired.");
+            }
+        } else if (request.getStatus() != ValetStatus.PARKED) {
             throw new RuntimeException(
                     "Can only initiate return from PARKED state. Current: " + request.getStatus());
         }
@@ -531,5 +538,23 @@ public class ValetServiceImpl implements ValetService {
         dto.setParkedLongitude(request.getParkedLongitude());
 
         return dto;
+    }
+
+    @Transactional
+    public ValetResponseDTO expireReturnConfirmation(Long requestId) {
+        ValetRequest request = getRequest(requestId);
+
+        if (request.getStatus() != ValetStatus.RETURN_CONFIRM_PENDING) {
+            return mapToResponseDTO(request); // idempotent, just return current state
+        }
+
+        if (LocalDateTime.now().isAfter(request.getReturnConfirmOtpExpiry())) {
+            request.setStatus(ValetStatus.PARKED);
+            request.setReturnConfirmOtp(null);
+            request.setReturnConfirmOtpExpiry(null);
+            return mapToResponseDTO(valetRequestRepository.save(request));
+        }
+
+        throw new RuntimeException("OTP has not expired yet.");
     }
 }

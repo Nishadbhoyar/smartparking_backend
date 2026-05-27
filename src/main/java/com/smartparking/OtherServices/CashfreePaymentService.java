@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartparking.dtos.request.PaymentInitiateRequestDTO;
 import com.smartparking.dtos.request.RefundRequestDTO;
 import com.smartparking.dtos.response.PaymentResponseDTO;
+import com.smartparking.dtos.ReceiptResponseDTO;
 
 import com.smartparking.entities.Booking;
 import com.smartparking.entities.Payment;
@@ -529,5 +530,58 @@ public class CashfreePaymentService {
             this.customer      = customer;
             this.referenceCode = referenceCode;
         }
+    }
+
+    public ReceiptResponseDTO getReceiptForBooking(Long bookingId) {
+
+        // 1. Load booking — throws if not found
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Booking not found: " + bookingId));
+
+        // 2. Most recent payment for this booking (any status)
+        Payment payment = paymentRepository
+                .findTopByServiceTypeAndReferenceIdOrderByInitiatedAtDesc(
+                        ServiceType.PARKING_BOOKING, bookingId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No payment record found for bookingId: " + bookingId));
+
+        // 3. Map to receipt DTO
+        ReceiptResponseDTO dto = new ReceiptResponseDTO();
+
+        // Payment side
+        dto.setPaymentStatus(payment.getStatus() != null
+                ? payment.getStatus().name() : null);
+        dto.setCashfreeOrderId(payment.getCashfreeOrderId());
+        dto.setCashfreePaymentId(payment.getCashfreePaymentId());
+        dto.setPaymentMethod(payment.getPaymentMethod());
+        dto.setFailureReason(payment.getFailureReason());
+        dto.setPaymentInitiatedAt(payment.getInitiatedAt());
+        dto.setPaymentCompletedAt(payment.getCompletedAt());
+        dto.setAmountPaid(payment.getAmount());
+
+        // Booking side
+        dto.setBookingCode(booking.getBookingCode());
+        dto.setScheduledEntryTime(booking.getEntryTime());
+        dto.setScheduledExitTime(booking.getExitTime());
+        dto.setBookingStatus(booking.getStatus() != null
+                ? booking.getStatus().name() : null);
+
+        // Customer name — guard against null
+        if (booking.getCustomer() != null) {
+            dto.setCustomerName(booking.getCustomer().getName());
+        }
+
+        // Parking lot name — guard against null
+        if (booking.getParkingLot() != null) {
+            dto.setParkingLotName(booking.getParkingLot().getName());
+        }
+
+        // Slot number — guard against null
+        if (booking.getSlot() != null) {
+            dto.setSlotNumber(booking.getSlot().getSlotNumber());
+        }
+
+        return dto;
     }
 }

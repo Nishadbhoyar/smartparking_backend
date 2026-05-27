@@ -30,7 +30,7 @@ public class SuperAdminController {
     @Autowired private RentalCompanyRepository     rentalCompanyRepository;
     @Autowired private UserRepository              userRepository;
     @Autowired private AnalyticsService            analyticsService;
-    @Autowired private UserService                 userService;  // ← ADD THIS
+    @Autowired private UserService                 userService;
 
     // ── Platform dashboard ──────────────────────────────────────────────────
     @GetMapping("/platform-stats")
@@ -49,6 +49,7 @@ public class SuperAdminController {
                             dto.setName(u.getName());
                             dto.setEmail(u.getEmail());
                             dto.setRole(u.getRole());
+                            dto.setPhoneNumber(u.getPhoneNumber()); // <-- ADDED
                             return dto;
                         })
                         .toList()
@@ -56,9 +57,6 @@ public class SuperAdminController {
     }
 
     // ── Create any user (VALET, PARKING_LOT_ADMIN, etc.) ───────────────────
-    // POST /api/super-admin/users/create
-    // Body: { name, email, password, role, drivingLicenseNumber? (for VALET),
-    //         businessRegistrationNumber? (for PARKING_LOT_ADMIN) }
     @PostMapping("/users/create")
     public ResponseEntity<?> createUser(@RequestBody UserRegistrationDTO dto) {
         // Reject SUPER_ADMIN creation even by super admin — must be DB-seeded
@@ -85,7 +83,8 @@ public class SuperAdminController {
                             dto.setName(a.getName());
                             dto.setEmail(a.getEmail());
                             dto.setRole(a.getRole());
-                            dto.setVerified(a.isVerified());   // ← ADD THIS LINE
+                            dto.setPhoneNumber(a.getPhoneNumber()); // <-- ADDED
+                            dto.setVerified(a.isVerified());
                             return dto;
                         })
                         .toList()
@@ -104,6 +103,7 @@ public class SuperAdminController {
         dto.setName(saved.getName());
         dto.setEmail(saved.getEmail());
         dto.setRole(saved.getRole());
+        dto.setPhoneNumber(saved.getPhoneNumber()); // <-- ADDED
         dto.setVerified(saved.isVerified());
         return ResponseEntity.ok(dto);
     }
@@ -119,6 +119,7 @@ public class SuperAdminController {
                             dto.setName(a.getName());
                             dto.setEmail(a.getEmail());
                             dto.setRole(a.getRole());
+                            dto.setPhoneNumber(a.getPhoneNumber()); // <-- ADDED
                             dto.setVerified(a.isVerified());
                             return dto;
                         })
@@ -145,6 +146,7 @@ public class SuperAdminController {
                             dto.setName(a.getName());
                             dto.setEmail(a.getEmail());
                             dto.setRole(a.getRole());
+                            dto.setPhoneNumber(a.getPhoneNumber()); // <-- ADDED
                             dto.setVerified(a.isVerified());
                             return dto;
                         })
@@ -157,7 +159,6 @@ public class SuperAdminController {
         FleetAdmin fleetAdmin = fleetAdminRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Fleet admin not found"));
 
-        // FIXED
         fleetAdmin.setVerified(true);
         FleetAdmin savedAdmin = fleetAdminRepository.save(fleetAdmin);
 

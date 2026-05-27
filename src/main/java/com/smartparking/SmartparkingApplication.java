@@ -6,7 +6,7 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableCaching  // ✅ Required for @Cacheable in CustomUserDetailsService to work
+@EnableCaching  
 @EnableScheduling
 public class SmartparkingApplication {
 
